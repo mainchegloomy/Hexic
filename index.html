@@ -136,15 +136,19 @@ function popAnim(list){const os=list.map(p=>g[p[0]][p[1]]);
     (function f(now){const p=Math.min(1,(now-t0)/D),s=Math.sin(Math.PI*p);
       os.forEach(o=>{o.fl=s;o.pop=s;o.lift=14*s;});
       if(p<1)requestAnimationFrame(f);else{os.forEach(o=>{o.fl=0;o.pop=0;o.lift=0});res();}})(t0);});}
+function winAnim(os){return new Promise(res=>{const t0=performance.now(),D=2400;
+  (function f(now){const p=Math.min(1,(now-t0)/D),u=Math.min(1,p*2.5),fade=p<.4?1:1-(p-.4)/.6;
+    os.forEach(o=>{o.fl=u;o.pop=.8*u;o.lift=26*u+5*Math.sin(p*16);o.al=fade;});
+    if(p<1)requestAnimationFrame(f);else{os.forEach(o=>{o.sc=0;o.ts=0;o.fl=0;o.pop=0;o.lift=0;o.al=1});res();}})(t0);});}
 function say(s){const m=$('msg');m.textContent=s;m.style.opacity=1;clearTimeout(say.t);say.t=setTimeout(()=>m.style.opacity=0,1000);}
 function hud(){$('sc').textContent=score;$('lv').textContent=level;$('st').textContent=level-1;$('bs').textContent=best;}
 async function resolve(){
   let chain=0;
   for(;;){
-    const sc=scan(),s=sc.out;if(sc.win){won=true;say('通關！');}
+    const sc=scan(),s=sc.out;if(sc.win)won=true;
     if(!s.size)break;chain++;
-    const gone=new Set();let n=0;
-    for(const k of s){const c=Math.floor(k/20),r=k%20;g[c][r].ts=0;gone.add(k);n++;}
+    const gone=new Set(),wp=[];let n=0;
+    for(const k of s){const c=Math.floor(k/20),r=k%20,o=g[c][r];if(sc.win&&o.pearl)wp.push(o);else o.ts=0;gone.add(k);n++;}
     sc.st.forEach(p=>{g[p[0]][p[1]].star=true;});
     sc.pl.forEach(p=>{const o=g[p[0]][p[1]];o.star=false;o.pearl=true;});
     score+=n*10*chain+Math.max(0,n-3)*10*chain+sc.st.length*100;cleared+=n;
@@ -155,6 +159,7 @@ async function resolve(){
     const pp=(sc.st.length||sc.pl.length)?popAnim([...sc.st,...sc.pl]):null;
     hud();await tween(320);
     if(pp)await pp;
+    if(wp.length){SFX.star();await winAnim(wp);}
     for(let c=0;c<C;c++){
       const keep=[];
       for(let r=R-1;r>=0;r--)if(!gone.has(id(c,r)))keep.push([g[c][r],r]);
@@ -210,7 +215,7 @@ $('mu').onclick=()=>{mute=!mute;$('mu').textContent='音效：'+(mute?'關 🔇'
 function hexPath(r){x.beginPath();for(let i=0;i<6;i++){const a=Math.PI/3*i;x.lineTo(r*Math.cos(a),r*Math.sin(a));}x.closePath();}
 function drawCell(px,py,o){
   if(o.sc<0.02)return;
-  x.save();x.translate(px+o.ox,py+o.oy-(o.lift||0));const zs=o.sc*(1+.22*(o.fl||0)+.45*(o.pop||0));x.scale(zs,zs);
+  x.save();x.globalAlpha=o.al===undefined?1:o.al;x.translate(px+o.ox,py+o.oy-(o.lift||0));const zs=o.sc*(1+.22*(o.fl||0)+.45*(o.pop||0));x.scale(zs,zs);
   const r=S-2;
   if(o.pop>0){const gl=x.createRadialGradient(0,0,2,0,0,r*1.9);gl.addColorStop(0,'rgba(255,240,150,'+(.9*o.pop)+')');gl.addColorStop(1,'rgba(255,240,150,0)');x.fillStyle=gl;x.beginPath();x.arc(0,0,r*1.9,0,7);x.fill();}
   if(o.fl>0){x.fillStyle='rgba(0,0,0,'+(.4*o.fl)+')';x.beginPath();x.ellipse(5*o.fl,15*o.fl,r*.85,r*.55,0,0,7);x.fill();}
