@@ -34,16 +34,18 @@ button:active{transform:scale(.96)}
 <div id="wrap">
   <canvas id="cv"></canvas>
   <div id="msg"></div>
-  <div id="over"><h2>無法再移動</h2><div id="fs"></div><button id="re">再玩一次</button></div>
+  <div id="over"><h2 id="ot">無法再移動</h2><div id="fs"></div><button id="re">再玩一次</button></div>
 </div>
 <div class="bar">
   <button id="nw">新遊戲</button>
   <button id="dr">方向：順時針 ↻</button>
+  <button id="mu">音效：開 🔊</button>
 </div>
 <div class="tip">
 <b>一般泡泡：</b>點三顆交會處，三顆旋轉一圈，途中三顆同色連成三角形就消除，否則轉回原位。<br>
 <b>星星：</b>六顆同色圍成一圈，圈消除、中間那顆變成星星。點星星可讓周圍六顆旋轉一步。<br>
 <b>黑星：</b>六顆星星圍成一圈，圈消除、中間變成黑星並升級（顏色變多）。點黑星可讓它上方、右下、左下三顆旋轉一步。<br>
+<b>通關：</b>三顆黑星轉成三角形並消除，即可通關！<br>
 滑鼠左鍵順時針、右鍵逆時針；手機可按按鈕切換方向。無任何可消除的移動時遊戲結束。</div>
 <script>
 const C=10,R=9,S=30,H=Math.sqrt(3)*S,M=6;
@@ -52,6 +54,22 @@ const cv=document.getElementById('cv'),x=cv.getContext('2d');
 const W=1.5*S*(C-1)+2*S+2*M,HH=R*H+H/2+2*M;
 cv.width=W*2;cv.height=HH*2;x.scale(2,2);
 const $=id=>document.getElementById(id);
+let AC=null,mute=false,rotating=null,won=false;
+function ac(){if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(AC&&AC.state==='suspended')AC.resume();return AC;}
+function tone(f,t0,d,type,v,f2){const a=ac();if(!a||mute)return;const o=a.createOscillator(),gn=a.createGain(),t=a.currentTime+t0;
+  o.type=type||'sine';o.frequency.setValueAtTime(f,t);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+d);
+  gn.gain.setValueAtTime(.0001,t);gn.gain.exponentialRampToValueAtTime(v||.12,t+.01);gn.gain.exponentialRampToValueAtTime(.0001,t+d);
+  o.connect(gn);gn.connect(a.destination);o.start(t);o.stop(t+d+.05);}
+const SFX={
+  rot(){tone(520,0,.07,'triangle',.1,380)},
+  back(){tone(300,0,.14,'triangle',.08,190)},
+  clear(ch){const b=[523,587,659,784,880,988,1175][Math.min(ch-1,6)];tone(b,0,.18,'sine',.16);tone(b*1.5,.06,.2,'sine',.1);tone(b*2,.12,.25,'triangle',.07)},
+  star(){[880,1175,1568,2093].forEach((f,i)=>tone(f,.15+i*.06,.25,'sine',.1))},
+  pearl(){[392,523,659,784,1047].forEach((f,i)=>tone(f,i*.1,.4,'triangle',.14));tone(1568,.5,.8,'sine',.1)},
+  win(){[523,659,784,1047,784,1047,1319,1568].forEach((f,i)=>tone(f,i*.13,.45,'triangle',.14))},
+  bug(){tone(180,0,.22,'sawtooth',.09,720);tone(720,.2,.22,'square',.06,140);tone(1320,.05,.32,'triangle',.05,330)},
+  over(){[392,330,262,196].forEach((f,i)=>tone(f,i*.2,.35,'sawtooth',.07))}
+};
 const pos=(c,r)=>[M+S+c*1.5*S,M+H/2+r*H+(c&1?H/2:0)];
 const inb=(c,r)=>c>=0&&c<C&&r>=0&&r<R;
 const D1=[[0,-1],[0,1],[-1,0],[-1,1],[1,0],[1,1]],D0=[[0,-1],[0,1],[-1,-1],[-1,0],[1,-1],[1,0]];
@@ -77,16 +95,17 @@ function around(c,r,angs){const q=pos(c,r);
   if(angs)L=L.filter(e=>angs.some(a=>Math.abs(e.a-a)<5));
   return L.sort((u,v)=>u.a-v.a).map(e=>e.n);}
 function scan(){
-  const out=new Set(),st=[],pl=[];
+  const out=new Set(),st=[],pl=[];let win=false;
   for(const t of T){const o=t.cells.map(p=>g[p[0]][p[1]]);
-    if(o.every(a=>!a.pearl&&!a.star)&&o[0].k===o[1].k&&o[1].k===o[2].k)t.cells.forEach(p=>out.add(id(p[0],p[1])));}
+    if(o.every(a=>!a.pearl&&!a.star)&&o[0].k===o[1].k&&o[1].k===o[2].k)t.cells.forEach(p=>out.add(id(p[0],p[1])));
+    else if(o.every(a=>a.pearl)){win=true;t.cells.forEach(p=>out.add(id(p[0],p[1])));}}
   for(let c=0;c<C;c++)for(let r=0;r<R;r++){
     const ns=nb(c,r);if(ns.length<6)continue;const m=g[c][r];if(m.pearl||m.star)continue;
     const os=ns.map(n=>g[n[0]][n[1]]);
     if(os.every(a=>a.star)){pl.push([c,r]);ns.forEach(n=>out.add(id(n[0],n[1])));}
     else if(os.every(a=>!a.star&&!a.pearl&&a.k===os[0].k)){st.push([c,r]);ns.forEach(n=>out.add(id(n[0],n[1])));}}
   [...st,...pl].forEach(p=>out.delete(id(p[0],p[1])));
-  return{out,st,pl};}
+  return{out,st,pl,win};}
 const findClear=()=>scan().out;
 function rotList(list,dir){const n=list.length,o=list.map(p=>g[p[0]][p[1]]);
   list.forEach((p,i)=>g[p[0]][p[1]]=o[((i-dir)%n+n)%n]);return o;}
@@ -101,16 +120,28 @@ function tween(ms){return new Promise(res=>{
   (function f(now){const p=Math.min(1,(now-t0)/ms),e=1-Math.pow(1-p,3);
     cs.forEach(o=>{o.ox=o.x0*(1-e);o.oy=o.y0*(1-e);o.sc=o.s0+(o.ts-o.s0)*e});
     p<1?requestAnimationFrame(f):res();})(t0);});}
-async function step(list,dir){
+async function step(list,dir,alt){
   const n=list.length,olds=list.map(q=>pos(q[0],q[1])),objs=rotList(list,dir);
-  objs.forEach((o,i)=>{const np=olds[(i+dir+n)%n];o.ox=olds[i][0]-np[0];o.oy=olds[i][1]-np[1];});
-  await tween(170);}
+  const cx=olds.reduce((s,p)=>s+p[0],0)/n,cy=olds.reduce((s,p)=>s+p[1],0)/n;
+  const a0=olds.map(p=>Math.atan2(p[1]-cy,p[0]-cx)),rad=olds.map(p=>Math.hypot(p[0]-cx,p[1]-cy));
+  const nw=olds.map((p,i)=>olds[(i+dir+n)%n]);
+  alt?SFX.bug():SFX.rot();
+  await new Promise(res=>{const t0=performance.now(),D=380;
+    (function f(now){const p=Math.min(1,(now-t0)/D),e=p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+      objs.forEach((o,i)=>{const a=a0[i]+dir*2*Math.PI/n*e;
+        o.ox=cx+rad[i]*Math.cos(a)-nw[i][0];o.oy=cy+rad[i]*Math.sin(a)-nw[i][1];o.fl=Math.sin(Math.PI*p);});
+      if(p<1)requestAnimationFrame(f);else{objs.forEach(o=>{o.ox=0;o.oy=0;o.fl=0});res();}})(t0);});}
+function popAnim(list){const os=list.map(p=>g[p[0]][p[1]]);
+  return new Promise(res=>{const t0=performance.now(),D=750;
+    (function f(now){const p=Math.min(1,(now-t0)/D),s=Math.sin(Math.PI*p);
+      os.forEach(o=>{o.fl=s;o.pop=s;o.lift=14*s;});
+      if(p<1)requestAnimationFrame(f);else{os.forEach(o=>{o.fl=0;o.pop=0;o.lift=0});res();}})(t0);});}
 function say(s){const m=$('msg');m.textContent=s;m.style.opacity=1;clearTimeout(say.t);say.t=setTimeout(()=>m.style.opacity=0,1000);}
 function hud(){$('sc').textContent=score;$('lv').textContent=level;$('st').textContent=level-1;$('bs').textContent=best;}
 async function resolve(){
   let chain=0;
   for(;;){
-    const sc=scan(),s=sc.out;
+    const sc=scan(),s=sc.out;if(sc.win){won=true;say('通關！');}
     if(!s.size)break;chain++;
     const gone=new Set();let n=0;
     for(const k of s){const c=Math.floor(k/20),r=k%20;g[c][r].ts=0;gone.add(k);n++;}
@@ -120,7 +151,10 @@ async function resolve(){
     if(chain>1)say('連鎖 ×'+chain);
     if(sc.st.length&&!sc.pl.length)say('星星！');
     if(sc.pl.length){level+=sc.pl.length;nc=Math.min(7,4+level);score+=500*sc.pl.length;say('黑星誕生！等級 '+level);}
-    hud();await tween(220);
+    if(sc.pl.length){SFX.clear(chain);SFX.pearl();}else if(sc.st.length){SFX.clear(chain);SFX.star();}else SFX.clear(chain);
+    const pp=(sc.st.length||sc.pl.length)?popAnim([...sc.st,...sc.pl]):null;
+    hud();await tween(320);
+    if(pp)await pp;
     for(let c=0;c<C;c++){
       const keep=[];
       for(let r=R-1;r>=0;r--)if(!gone.has(id(c,r)))keep.push([g[c][r],r]);
@@ -128,10 +162,11 @@ async function resolve(){
       for(let i=0;i<R;i++){const row=R-1-i;
         if(i<keep.length){const [o,old]=keep[i];g[c][row]=o;o.oy=(old-row)*H;}
         else{const o=mk();o.oy=-miss*H;g[c][row]=o;}}}
-    await tween(320);}
+    await tween(450);}
   if(score>best){best=score;try{localStorage.setItem('hexic_best',best)}catch(e){}}
   hud();
-  if(!hasMove()){$('fs').textContent='最終分數 '+score+'　等級 '+level;$('over').style.display='flex';}
+  if(won){SFX.win();$('ot').textContent='通關！';$('fs').textContent='最終分數 '+score+'　等級 '+level;$('over').style.display='flex';}
+  else if(!hasMove()){SFX.over();$('ot').textContent='無法再移動';$('fs').textContent='最終分數 '+score+'　等級 '+level;$('over').style.display='flex';}
 }
 function tri(c,r){const k=g[c][r].k;
   return T.some(t=>t.cells.some(p=>p[0]==c&&p[1]==r)&&t.cells.every(p=>g[p[0]][p[1]]&&g[p[0]][p[1]].k===k));}
@@ -143,7 +178,7 @@ function gen(){
     if(!ok)return false;}
   return true;}
 function init(){
-  score=0;level=1;cleared=0;nc=5;busy=false;$('over').style.display='none';
+  score=0;level=1;cleared=0;nc=5;busy=false;won=false;$('over').style.display='none';
   do{while(!gen());}while(findClear().size||!hasMove());
   hud();}
 function nearest(px,py){let b=null,bd=1e9;for(const t of T){const d=(t.cx-px)**2+(t.cy-py)**2;if(d<bd){bd=d;b=t;}}return b;}
@@ -160,20 +195,25 @@ cv.addEventListener('pointermove',e=>{if(!g)return;const p=evPos(e);hover=pick(p
 cv.addEventListener('pointerleave',()=>hover=null);
 cv.addEventListener('contextmenu',e=>e.preventDefault());
 cv.addEventListener('pointerdown',async e=>{
-  if(busy)return;e.preventDefault();
+  ac();if(busy){if(rotating&&(e.button===2?-dirMode:dirMode)!==rotating.dir)rotating.flip=true;return;}e.preventDefault();
   const p=evPos(e),t=pick(p[0],p[1]);hover=t;
   const dir=e.button===2?-dirMode:dirMode;
   busy=true;
   if(t.special){await step(t.cells,dir);}
-  else{for(let s=0;s<3;s++){await step(t.cells,dir);if(findClear().size)break;}}
+  else{let hit=false;const ro=rotating={dir,flip:false};for(let s=0;s<3;s++){await step(t.cells,dir);if(findClear().size){hit=true;break;}}if(!hit&&ro.flip)await step(t.cells,-dir,true);else if(!hit)SFX.back();rotating=null;}
   await resolve();busy=false;});
-$('dr').onclick=()=>{dirMode=-dirMode;$('dr').textContent='方向：'+(dirMode>0?'順時針 ↻':'逆時針 ↺');};
+$('dr').onclick=()=>{if(rotating)rotating.flip=true;dirMode=-dirMode;$('dr').textContent='方向：'+(dirMode>0?'順時針 ↻':'逆時針 ↺');};
 $('nw').onclick=init;$('re').onclick=init;
+['pointerup','touchend','click','keydown'].forEach(ev=>document.addEventListener(ev,()=>{
+  const a=ac();if(a&&!ac.u){ac.u=1;const s=a.createBufferSource();s.buffer=a.createBuffer(1,1,22050);s.connect(a.destination);s.start(0);}},{passive:true}));
+$('mu').onclick=()=>{mute=!mute;$('mu').textContent='音效：'+(mute?'關 🔇':'開 🔊');};
 function hexPath(r){x.beginPath();for(let i=0;i<6;i++){const a=Math.PI/3*i;x.lineTo(r*Math.cos(a),r*Math.sin(a));}x.closePath();}
 function drawCell(px,py,o){
   if(o.sc<0.02)return;
-  x.save();x.translate(px+o.ox,py+o.oy);x.scale(o.sc,o.sc);
+  x.save();x.translate(px+o.ox,py+o.oy-(o.lift||0));const zs=o.sc*(1+.22*(o.fl||0)+.45*(o.pop||0));x.scale(zs,zs);
   const r=S-2;
+  if(o.pop>0){const gl=x.createRadialGradient(0,0,2,0,0,r*1.9);gl.addColorStop(0,'rgba(255,240,150,'+(.9*o.pop)+')');gl.addColorStop(1,'rgba(255,240,150,0)');x.fillStyle=gl;x.beginPath();x.arc(0,0,r*1.9,0,7);x.fill();}
+  if(o.fl>0){x.fillStyle='rgba(0,0,0,'+(.4*o.fl)+')';x.beginPath();x.ellipse(5*o.fl,15*o.fl,r*.85,r*.55,0,0,7);x.fill();}
   x.textAlign='center';x.textBaseline='middle';
   if(o.pearl){
     hexPath(r);x.fillStyle='#2b3555';x.fill();
@@ -193,7 +233,7 @@ function drawCell(px,py,o){
   x.restore();}
 function draw(){
   x.clearRect(0,0,W,HH);
-  if(g){for(let c=0;c<C;c++)for(let r=0;r<R;r++){const p=pos(c,r);drawCell(p[0],p[1],g[c][r]);}
+  if(g){for(let pass=0;pass<2;pass++)for(let c=0;c<C;c++)for(let r=0;r<R;r++){const o=g[c][r];if((o.fl>0)!==(pass===1))continue;const p=pos(c,r);drawCell(p[0],p[1],o);}
     if(hover&&!busy){
       x.save();x.lineWidth=2.5;x.strokeStyle='#fff';x.shadowColor='#fff';x.shadowBlur=8;
       for(const q of hover.cells){const p=pos(q[0],q[1]);x.save();x.translate(p[0],p[1]);hexPath(S-2);x.stroke();x.restore();}
