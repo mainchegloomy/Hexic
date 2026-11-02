@@ -45,6 +45,7 @@ button:active{transform:scale(.96)}
 <b>一般泡泡：</b>點三顆交會處，三顆旋轉一圈，途中三顆同色連成三角形就消除，否則轉回原位。<br>
 <b>星星：</b>六顆同色圍成一圈，圈消除、中間那顆變成星星。點星星可讓周圍六顆旋轉一步。<br>
 <b>黑星：</b>六顆星星圍成一圈，圈消除、中間變成黑星並升級（顏色變多）。點黑星可讓它上方、右下、左下三顆旋轉一步。<br>
+<b>炸彈：</b>升級後會不定時掉下炸彈，倒數 4～8 步（每操作一次算一步）；在倒數內用同色三角形消掉它，否則膨脹引爆、遊戲結束。<br>
 <b>通關：</b>三顆黑星轉成三角形並消除，即可通關！<br>
 滑鼠左鍵順時針、右鍵逆時針；手機可按按鈕切換方向。無任何可消除的移動時遊戲結束。</div>
 <script>
@@ -54,7 +55,7 @@ const cv=document.getElementById('cv'),x=cv.getContext('2d');
 const W=1.5*S*(C-1)+2*S+2*M,HH=R*H+H/2+2*M;
 cv.width=W*2;cv.height=HH*2;x.scale(2,2);
 const $=id=>document.getElementById(id);
-let AC=null,mute=false,rotating=null,won=false;
+let AC=null,mute=false,rotating=null,won=false,boom=null;
 function ac(){if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(AC&&AC.state==='suspended')AC.resume();return AC;}
 function tone(f,t0,d,type,v,f2){const a=ac();if(!a||mute)return;const o=a.createOscillator(),gn=a.createGain(),t=a.currentTime+t0;
   o.type=type||'sine';o.frequency.setValueAtTime(f,t);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+d);
@@ -67,6 +68,12 @@ const SFX={
   star(){[880,1175,1568,2093].forEach((f,i)=>tone(f,.15+i*.06,.25,'sine',.1))},
   pearl(){[392,523,659,784,1047].forEach((f,i)=>tone(f,i*.1,.4,'triangle',.14));tone(1568,.5,.8,'sine',.1)},
   win(){[523,659,784,1047,784,1047,1319,1568].forEach((f,i)=>tone(f,i*.13,.45,'triangle',.14))},
+  tick(){tone(880,0,.08,'square',.06)},
+  drop(){tone(700,0,.35,'triangle',.1,180)},
+  fuse(){tone(900,0,1.2,'sawtooth',.03,2200)},
+  boom(){const a=ac();if(!a||mute)return;const n=Math.floor(a.sampleRate*.9),b=a.createBuffer(1,n,a.sampleRate),d=b.getChannelData(0);
+    for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,2);
+    const s=a.createBufferSource(),gn=a.createGain();s.buffer=b;gn.gain.value=.5;s.connect(gn);gn.connect(a.destination);s.start();tone(120,0,.6,'sine',.3,35)},
   bug(){tone(180,0,.22,'sawtooth',.09,720);tone(720,.2,.22,'square',.06,140);tone(1320,.05,.32,'triangle',.05,330)},
   over(){[392,330,262,196].forEach((f,i)=>tone(f,i*.2,.35,'sawtooth',.07))}
 };
@@ -140,6 +147,31 @@ function winAnim(os){return new Promise(res=>{const t0=performance.now(),D=2400;
   (function f(now){const p=Math.min(1,(now-t0)/D),u=Math.min(1,p*2.5),fade=p<.4?1:1-(p-.4)/.6;
     os.forEach(o=>{o.fl=u;o.pop=.8*u;o.lift=26*u+5*Math.sin(p*16);o.al=fade;});
     if(p<1)requestAnimationFrame(f);else{os.forEach(o=>{o.sc=0;o.ts=0;o.fl=0;o.pop=0;o.lift=0;o.al=1});res();}})(t0);});}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function explode(c,r){
+  const o=g[c][r],p=pos(c,r);SFX.fuse();
+  await new Promise(res=>{const t0=performance.now(),D=1300;
+    (function f(now){const q=Math.min(1,(now-t0)/D);o.fl=q;o.pop=2*q;o.ox=(Math.random()-.5)*5*q;o.oy=(Math.random()-.5)*5*q;
+      if(q<1)requestAnimationFrame(f);else res();})(t0);});
+  o.sc=0;o.ts=0;o.ox=0;o.oy=0;o.fl=0;o.pop=0;
+  boom={x:p[0],y:p[1],t0:performance.now()};SFX.boom();
+  await sleep(1200);
+  SFX.over();$('ot').textContent='遊戲結束';$('fs').textContent='炸彈爆炸了！最終分數 '+score+'　等級 '+level;$('over').style.display='flex';}
+async function dropBomb(){
+  const cand=[];
+  for(let c=0;c<C;c++)for(let r=0;r<R;r++){const o=g[c][r];if(!o.star&&!o.pearl&&o.bomb===undefined)cand.push([c,r]);}
+  if(!cand.length)return;
+  const [c,r]=cand[Math.floor(Math.random()*cand.length)],o=g[c][r];
+  o.bomb=4+Math.floor(Math.random()*5);SFX.drop();say('炸彈出現！');
+  o.oy=-(r+1)*H-30;await tween(500);}
+async function afterMove(){
+  const bs=[];
+  for(let c=0;c<C;c++)for(let r=0;r<R;r++)if(g[c][r].bomb>0)bs.push([c,r]);
+  bs.forEach(p=>g[p[0]][p[1]].bomb--);
+  if(bs.length)SFX.tick();
+  const hit=bs.find(p=>g[p[0]][p[1]].bomb<=0);
+  if(hit){await explode(hit[0],hit[1]);return;}
+  if(level>=2&&bs.length<2&&Math.random()<.3)await dropBomb();}
 function say(s){const m=$('msg');m.textContent=s;m.style.opacity=1;clearTimeout(say.t);say.t=setTimeout(()=>m.style.opacity=0,1000);}
 function hud(){$('sc').textContent=score;$('lv').textContent=level;$('st').textContent=level-1;$('bs').textContent=best;}
 async function resolve(){
@@ -149,8 +181,8 @@ async function resolve(){
     if(!s.size)break;chain++;
     const gone=new Set(),wp=[];let n=0;
     for(const k of s){const c=Math.floor(k/20),r=k%20,o=g[c][r];if(sc.win&&o.pearl)wp.push(o);else o.ts=0;gone.add(k);n++;}
-    sc.st.forEach(p=>{g[p[0]][p[1]].star=true;});
-    sc.pl.forEach(p=>{const o=g[p[0]][p[1]];o.star=false;o.pearl=true;});
+    sc.st.forEach(p=>{g[p[0]][p[1]].star=true;g[p[0]][p[1]].bomb=undefined;});
+    sc.pl.forEach(p=>{const o=g[p[0]][p[1]];o.star=false;o.pearl=true;o.bomb=undefined;});
     score+=n*10*chain+Math.max(0,n-3)*10*chain+sc.st.length*100;cleared+=n;
     if(chain>1)say('連鎖 ×'+chain);
     if(sc.st.length&&!sc.pl.length)say('星星！');
@@ -183,7 +215,7 @@ function gen(){
     if(!ok)return false;}
   return true;}
 function init(){
-  score=0;level=1;cleared=0;nc=5;busy=false;won=false;$('over').style.display='none';
+  score=0;level=1;cleared=0;nc=5;busy=false;won=false;boom=null;cv.style.transform='';$('over').style.display='none';
   do{while(!gen());}while(findClear().size||!hasMove());
   hud();}
 function nearest(px,py){let b=null,bd=1e9;for(const t of T){const d=(t.cx-px)**2+(t.cy-py)**2;if(d<bd){bd=d;b=t;}}return b;}
@@ -206,7 +238,7 @@ cv.addEventListener('pointerdown',async e=>{
   busy=true;
   if(t.special){await step(t.cells,dir);}
   else{let hit=false;const ro=rotating={dir,flip:false};for(let s=0;s<3;s++){await step(t.cells,dir);if(findClear().size){hit=true;break;}}if(!hit&&ro.flip)await step(t.cells,-dir,true);else if(!hit)SFX.back();rotating=null;}
-  await resolve();busy=false;});
+  await resolve();if(!won&&$('over').style.display!=='flex')await afterMove();busy=false;});
 $('dr').onclick=()=>{if(rotating)rotating.flip=true;dirMode=-dirMode;$('dr').textContent='方向：'+(dirMode>0?'順時針 ↻':'逆時針 ↺');};
 $('nw').onclick=init;$('re').onclick=init;
 ['pointerup','touchend','click','keydown'].forEach(ev=>document.addEventListener(ev,()=>{
@@ -217,7 +249,7 @@ function drawCell(px,py,o){
   if(o.sc<0.02)return;
   x.save();x.globalAlpha=o.al===undefined?1:o.al;x.translate(px+o.ox,py+o.oy-(o.lift||0));const zs=o.sc*(1+.22*(o.fl||0)+.45*(o.pop||0));x.scale(zs,zs);
   const r=S-2;
-  if(o.pop>0){const gl=x.createRadialGradient(0,0,2,0,0,r*1.9);gl.addColorStop(0,'rgba(255,240,150,'+(.9*o.pop)+')');gl.addColorStop(1,'rgba(255,240,150,0)');x.fillStyle=gl;x.beginPath();x.arc(0,0,r*1.9,0,7);x.fill();}
+  if(o.pop>0){const gl=x.createRadialGradient(0,0,2,0,0,r*1.9);gl.addColorStop(0,(o.bomb!==undefined?'rgba(255,90,40,':'rgba(255,240,150,')+(.9*o.pop)+')');gl.addColorStop(1,'rgba(255,240,150,0)');x.fillStyle=gl;x.beginPath();x.arc(0,0,r*1.9,0,7);x.fill();}
   if(o.fl>0){x.fillStyle='rgba(0,0,0,'+(.4*o.fl)+')';x.beginPath();x.ellipse(5*o.fl,15*o.fl,r*.85,r*.55,0,0,7);x.fill();}
   x.textAlign='center';x.textBaseline='middle';
   if(o.pearl){
@@ -235,7 +267,16 @@ function drawCell(px,py,o){
     const gr=x.createRadialGradient(-6,-8,1,0,0,r);gr.addColorStop(0,'rgba(255,255,255,.65)');gr.addColorStop(.5,'rgba(255,255,255,.08)');gr.addColorStop(1,'rgba(0,0,0,.28)');
     hexPath(r);x.fillStyle=gr;x.fill();x.lineWidth=1.5;x.strokeStyle='rgba(0,0,0,.35)';x.stroke();
   }
+  if(o.bomb!==undefined&&!o.star&&!o.pearl)drawBomb(o,r);
   x.restore();}
+function drawBomb(o,r){
+  const urgent=o.bomb<=2,pulse=urgent?.5+.5*Math.sin(performance.now()/110):0;
+  if(urgent){x.lineWidth=3;x.strokeStyle='rgba(255,40,40,'+(.4+.6*pulse)+')';hexPath(r);x.stroke();}
+  const gr=x.createRadialGradient(-5,-6,1,0,0,r*.6);gr.addColorStop(0,'#666');gr.addColorStop(1,'#050505');
+  x.beginPath();x.arc(0,3,r*.55,0,7);x.fillStyle=gr;x.fill();
+  x.strokeStyle='#d9b36c';x.lineWidth=2.5;x.beginPath();x.moveTo(5,-r*.4);x.quadraticCurveTo(10,-r*.7,15,-r*.55);x.stroke();
+  x.fillStyle='#ffb300';x.beginPath();x.arc(15,-r*.55,2.8+pulse*2,0,7);x.fill();
+  x.fillStyle='#fff';x.font='bold 17px sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillText(o.bomb,0,4);}
 function draw(){
   x.clearRect(0,0,W,HH);
   if(g){for(let pass=0;pass<2;pass++)for(let c=0;c<C;c++)for(let r=0;r<R;r++){const o=g[c][r];if((o.fl>0)!==(pass===1))continue;const p=pos(c,r);drawCell(p[0],p[1],o);}
@@ -243,6 +284,15 @@ function draw(){
       x.save();x.lineWidth=2.5;x.strokeStyle='#fff';x.shadowColor='#fff';x.shadowBlur=8;
       for(const q of hover.cells){const p=pos(q[0],q[1]);x.save();x.translate(p[0],p[1]);hexPath(S-2);x.stroke();x.restore();}
       x.beginPath();x.arc(hover.cx,hover.cy,5,0,7);x.fillStyle='#fff';x.fill();x.restore();}}
+  if(boom){const p=(performance.now()-boom.t0)/1100;
+    if(p<1){
+      const gr=x.createRadialGradient(boom.x,boom.y,0,boom.x,boom.y,p*W*.9+10);
+      gr.addColorStop(0,'rgba(255,255,220,'+(1-p)+')');gr.addColorStop(.45,'rgba(255,150,30,'+.8*(1-p)+')');gr.addColorStop(1,'rgba(255,60,0,0)');
+      x.fillStyle=gr;x.fillRect(0,0,W,HH);
+      x.fillStyle='rgba(255,255,255,'+Math.max(0,.6-p*1.5)+')';x.fillRect(0,0,W,HH);
+      for(let i=0;i<18;i++){const a=i*.349+(i%3),d=p*W*(.35+.1*(i%4));x.fillStyle='rgba(255,'+(180-i*5)+',40,'+(1-p)+')';x.beginPath();x.arc(boom.x+Math.cos(a)*d,boom.y+Math.sin(a)*d,5*(1-p)+1,0,7);x.fill();}
+      cv.style.transform='translate('+(Math.random()-.5)*10*(1-p)+'px,'+(Math.random()-.5)*10*(1-p)+'px)';
+    }else cv.style.transform='';}
   requestAnimationFrame(draw);}
 init();draw();
 </script>
