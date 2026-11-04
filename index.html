@@ -48,7 +48,7 @@ button:active{transform:scale(.96)}
 <b>等級：</b>分數達標就自動升級，最高 10 等；等級越高，消除得分越高，每升兩級多一種顏色。<br>
 <b>炸彈：</b>4 等之後會不定時掉下炸彈，倒數 4～8 步（每操作一次算一步）；在倒數內用同色三角形消掉它，否則膨脹引爆、遊戲結束。<br>
 <b>通關：</b>三顆黑星轉成三角形並消除，即可通關！<br>
-滑鼠左鍵順時針、右鍵逆時針；手機可按按鈕切換方向。無任何可消除的移動時遊戲結束。</div>
+滑鼠左鍵依目前方向旋轉、右鍵反方向；按「方向」按鈕或電腦鍵盤空白鍵可切換方向。無任何可消除的移動時遊戲結束。</div>
 <script>
 const C=10,R=9,S=30,H=Math.sqrt(3)*S,M=6;
 const COL=['#e65c5a','#e9c548','#58b06d','#4a90dc','#9a6ac6','#ee9548','#4bb8c6','#dd72a3','#a3c24a'];
@@ -246,7 +246,10 @@ cv.addEventListener('pointerdown',async e=>{
   if(t.special){await step(t.cells,dir);}
   else{let hit=false;const ro=rotating={dir,flip:false};for(let s=0;s<3;s++){await step(t.cells,dir);if(findClear().size){hit=true;break;}}if(!hit&&ro.flip)await step(t.cells,-dir,true);else if(!hit)SFX.back();rotating=null;}
   await resolve();if(!won&&$('over').style.display!=='flex')await afterMove();busy=false;});
-$('dr').onclick=()=>{if(rotating)rotating.flip=true;dirMode=-dirMode;$('dr').textContent='方向：'+(dirMode>0?'順時針 ↻':'逆時針 ↺');};
+function toggleDir(){if(rotating)rotating.flip=true;dirMode=-dirMode;$('dr').textContent='方向：'+(dirMode>0?'順時針 ↻':'逆時針 ↺');}
+$('dr').onclick=toggleDir;
+document.addEventListener('keydown',e=>{if(e.code==='Space'||e.key===' '){e.preventDefault();if(!e.repeat)toggleDir();}});
+document.addEventListener('keyup',e=>{if(e.code==='Space'||e.key===' ')e.preventDefault();});
 $('nw').onclick=init;$('re').onclick=init;
 ['pointerdown','pointerup','touchstart','touchend','click','keydown'].forEach(ev=>document.addEventListener(ev,unlock,{passive:true}));
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){ac();wake();}});
